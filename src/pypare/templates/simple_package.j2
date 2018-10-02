@@ -1,0 +1,16 @@
+<!DOCTYPE html>
+<html>
+  <head>
+      <title>Links for {{ project_name }}</title>
+  </head>
+  <body>
+      <h1>Links for {{ project_name }}</h1>
+      {% for version, release in metadata.releases.items() %}
+        {% for release_file in release %}
+        <a
+            data-requires-python="{{ release_file.requires_python}}"
+            href="{{ release_file.url }}#sha256={{ release_file.digests.sha256 }}">{{ release_file.url | basename }}</a><br/>
+        {% endfor %}
+      {% endfor %}
+  </body>
+</html>
