@@ -283,15 +283,6 @@ version = "1.0.2"
 flake8 = "*"
 
 [[package]]
-category = "dev"
-description = "Clean single-source support for Python 3 and 2"
-name = "future"
-optional = false
-platform = "UNKNOWN"
-python-versions = "*"
-version = "0.16.0"
-
-[[package]]
 category = "main"
 description = "Internationalized Domain Names in Applications (IDNA)"
 name = "idna"
@@ -323,6 +314,15 @@ optional = false
 platform = "*"
 python-versions = ">=2.7, !=3.0.*, !=3.1.*, !=3.2.*, !=3.3.*"
 version = "1.1.0"
+
+[[package]]
+category = "main"
+description = "inotify for asyncio"
+name = "inotipy"
+optional = false
+platform = "*"
+python-versions = "*"
+version = "0.1.1"
 
 [[package]]
 category = "dev"
@@ -824,33 +824,6 @@ watchdog = ">=0.6.0"
 
 [[package]]
 category = "dev"
-description = "JSON RPC 2.0 server library"
-name = "python-jsonrpc-server"
-optional = false
-platform = "*"
-python-versions = "*"
-version = "0.0.2"
-
-[package.dependencies]
-future = ">=0.14.0"
-
-[[package]]
-category = "dev"
-description = "Python Language Server for the Language Server Protocol"
-name = "python-language-server"
-optional = false
-platform = "*"
-python-versions = "*"
-version = "0.21.2"
-
-[package.dependencies]
-future = ">=0.14.0"
-jedi = ">=0.12"
-pluggy = "*"
-python-jsonrpc-server = "*"
-
-[[package]]
-category = "dev"
 description = "World timezone definitions, modern and historical"
 name = "pytz"
 optional = false
@@ -978,7 +951,7 @@ name = "toml"
 optional = false
 platform = "*"
 python-versions = "*"
-version = "0.9.6"
+version = "0.10.0"
 
 [[package]]
 category = "dev"
@@ -1108,7 +1081,7 @@ idna = ">=2.0"
 multidict = ">=4.0"
 
 [metadata]
-content-hash = "9c225323298b09962027ab7044612b288384f97b2180fd29fdbc8395ec42b5c5"
+content-hash = "078d4c645746771e5155b217c03d8ae9273ede5e23f81d91e5a4d517bcb32201"
 platform = "*"
 python-versions = "^3.6"
 
@@ -1140,10 +1113,10 @@ docutils = ["02aec4bd92ab067f6ff27a38a38a41173bf01bed8f89157768c1573f53e474a6", 
 fancycompleter = ["d2522f1f3512371f295379c4c0d1962de06762eb586c199620a2a5d423539b12"]
 flake8 = ["5ee1a43ccd0716d6061521eec6937c983efa027793013e572712c4da55c7c83e", "c99cc9716d6655d9c8bcb1e77632b8615bf0abd282d7abd9f5c2148cad7fc669"]
 flake8-polyfill = ["12be6a34ee3ab795b19ca73505e7b55826d5f6ad7230d31b18e106400169b9e9", "e44b087597f6da52ec6393a709e7108b2905317d0c0b744cdca6208e670d8eda"]
-future = ["e39ced1ab767b5936646cedba8bcce582398233d6a627067d4c6a454c90cfedb"]
 idna = ["156a6814fb5ac1fc6850fb002e0852d56c0c8d2531923a51032d1b70760e186e", "684a38a6f903c1d71d6d5fac066b58d7768af4de2b832e426ec79c30daa94a16"]
 idna-ssl = ["a933e3bb13da54383f9e8f35dc4f9cb9eb9b3b78c6b36f311254d6d0d92c6c7c"]
 imagesize = ["3f349de3eb99145973fefb7dbe38554414e5c30abd0c8e4b970a7c9d09f3a1d8", "f3832918bc3c66617f92e35f5d70729187676313caa60c187eb0f28b8fe5e3b5"]
+inotipy = ["825a26cd669047f49f56ce708bbe3b04b662710bce54cdf29a76f3a0ad40c988"]
 ipython = ["007dcd929c14631f83daff35df0147ea51d1af420da303fd078343878bd5fb62", "b0f2ef9eada4a68ef63ee10b6dde4f35c840035c50fd24265f8052c98947d5a4"]
 ipython-genutils = ["72dd37233799e619666c9f639a9da83c34013a73e8bbc79a7a6348d93c61fab8", "eb2e116e75ecef9d4d228fdc66af54269afa26ab4463042e33785b887c628ba8"]
 isort = ["1153601da39a25b14ddc54955dbbacbb6b2d19135386699e2ad58517953b34af", "b9c40e9750f3d77e6e4d441d8b0266cf555e7cdabdcff33c4fd06366ca761ef8", "ec9ef8f4a9bc6f71eec99e1806bfa2de401650d996c59330782b89a5555c1497"]
@@ -1185,8 +1158,6 @@ pytest-pycodestyle = ["ebaddf3e31f281ae7e7f45c30840b2d7fdf1aa7a058f2e29e4ba55460
 pytest-pydocstyle = ["8af789e596cc0a254f5f280cc93a960e168cf1874ef21f4b3919f8b5eac0bb15"]
 pytest-randomly = ["6db5e03d72b54052b9b379dc3cfa4749c19bfe4de161cf3eb24762049f4ce9be", "92ec6745d3ebdd690ecb598648748c9601f16f5afacf83ccef2b50d23e6edb7f"]
 pytest-watch = ["06136f03d5b361718b8d0d234042f7b2f203910d8568f63df2f866b547b3d4b9"]
-python-jsonrpc-server = ["533434fa982eb42c36ddb0b6758cef8e6eaf46d014f76b70a401b8790a3e6d57"]
-python-language-server = ["fa9162acb1402b807132d7288b7f521db2bd666d63505d8a4d9464d4b8488c52"]
 pytz = ["a061aa0a9e06881eb8b3b2b43f05b9439d6583c206d0a6c340ff72a7b6669053", "ffb9ef1de172603304d9d2819af6f5ece76f2e85ec10692a524dd876e72bf277"]
 pyyaml = ["3d7da3009c0f3e783b2c873687652d83b1bbfd5c88e9813fb7e5b03c0dd3108b", "3ef3092145e9b70e3ddd2c7ad59bdd0252a94dfe3949721633e41344de00a6bf", "40c71b8e076d0550b2e6380bada1f1cd1017b882f7e16f09a65be98e017f211a", "558dd60b890ba8fd982e05941927a3911dc409a63dcb8b634feaa0cda69330d3", "a7c28b45d9f99102fa092bb213aa12e0aaf9a6a1f5e395d36166639c1f96c3a1", "aa7dd4a6a427aed7df6fb7f08a580d68d9b118d90310374716ae90b710280af1", "bc558586e6045763782014934bfaf39d48b8ae85a2713117d16c39864085c613", "d46d7982b62e0729ad0175a9bc7e10a566fc07b224d2c79fafb5e032727eaa04", "d5eef459e30b09f5a098b9cea68bebfeb268697f78d647bd255a085371ac7f3f", "e01d3203230e1786cd91ccfdc8f8454c8069c91bee3962ad93b87a4b2860f537", "e170a9e6fcfd19021dd29845af83bb79236068bf5fd4df3327c1be18182b2531"]
 radon = ["a5848e29035961d1785b88bac1cde3146b5cd5cacf380561fbd650cee2064884", "dafb445bc1c6427df13b67dc09ffcd003826dc4e2b952aef16a9a5c3882facc4"]
@@ -1197,7 +1168,7 @@ snowballstemmer = ["919f26a68b2c17a7634da993d91339e288964f93c274f1343e3bbbe2096e
 sphinx = ["652eb8c566f18823a022bb4b6dbc868d366df332a11a0226b5bc3a798a479f17", "d222626d8356de702431e813a05c68a35967e3d66c6cd1c2c89539bb179a7464"]
 sphinxcontrib-websupport = ["68ca7ff70785cbe1e7bccc71a48b5b6d965d79ca50629606c7861a21b206d9dd", "9de47f375baf1ea07cdb3436ff39d7a9c76042c10a769c52353ec46e4e8fc3b9"]
 structlog = ["e361edb3b9aeaa85cd38a1bc9ddbb60cda8a991fc29de9db26832f6300e81eb4", "e912c03a3cf6876803c3f1b1e4b09dd4b9e4bcd0977586cb59cf538351ba6b1b"]
-toml = ["380178cde50a6a79f9d2cf6f42a62a5174febe5eea4126fe4038785f1d888d42", "a7901919d3e4f92ffba7ff40a9d697e35bbbc8a8049fe8da742f34c83606d957"]
+toml = ["229f81c57791a41d65e399fc06bf0848bab550a9dfd5ed66df18ce5f05e73d5c", "235682dd292d5899d361a811df37e04a8828a5b1da3115886b73cf81ebc9100e", "f1db651f9657708513243e61e6cc67d101a39bad662eaa9b5546f789338e07a3"]
 tox = ["7f802b37fffd3b5ef2aab104943fa5dad24bf9564bb7e732e54b8d0cfec2fca0", "cc97859bd7f38aa5b3b8ba55ffe7ee9952e7050faad1aedc0829cd3db2fb61d6"]
 tox-pyenv = ["916c2213577aec0b3b5452c5bfb32fd077f3a3196f50a81ad57d7ef3fc2599e4", "e470c18af115fe52eeff95e7e3cdd0793613eca19709966fc2724b79d55246cb"]
 traitlets = ["9c4bd2d267b7153df9152698efb1050a5d84982d3384a37b2c1f7723ba3e7835", "c6cb5e6f57c5a9bdaa40fa71ce7b4af30298fbab9ece9815b5d995ab6217c7d9"]

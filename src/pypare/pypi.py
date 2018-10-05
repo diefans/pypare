@@ -30,8 +30,9 @@ import attr
 import jinja2
 import pkg_resources
 import structlog
+import inotipy
 
-from . import utils, inotify
+from . import utils
 
 log = structlog.get_logger()
 routes = aiohttp.web.RouteTableDef()
@@ -452,12 +453,12 @@ class CachingStreamer:
         self.log.info('Stream from intermediate',
                       path=self.file_path_preparing)
 
-        watcher = inotify.Watcher.create()
+        watcher = inotipy.Watcher.create()
         watcher.watch(str(self.file_path_preparing),
-                      inotify.IN.MOVE_SELF
-                      | inotify.IN.DELETE_SELF
-                      | inotify.IN.CLOSE_WRITE
-                      | inotify.IN.MODIFY
+                      inotipy.IN.MOVE_SELF
+                      | inotipy.IN.DELETE_SELF
+                      | inotipy.IN.CLOSE_WRITE
+                      | inotipy.IN.MODIFY
                       )
         fut_finished = asyncio.Future()
         ev_write = asyncio.Event()
@@ -467,14 +468,14 @@ class CachingStreamer:
                 event = await watcher.get()
                 self.log.debug('File event',
                                file_event=event, watch=event.watch)
-                if event.mask & inotify.IN.MODIFY:
+                if event.mask & inotipy.IN.MODIFY:
                     ev_write.set()
-                if event.mask & inotify.IN.DELETE_SELF:
+                if event.mask & inotipy.IN.DELETE_SELF:
                     fut_finished.set_exception(FileNotFoundError(event))
                     break
 
                 if event.mask & (
-                        inotify.IN.MOVE_SELF | inotify.IN.CLOSE_WRITE):
+                        inotipy.IN.MOVE_SELF | inotipy.IN.CLOSE_WRITE):
                     fut_finished.set_result(event)
                     break
 
