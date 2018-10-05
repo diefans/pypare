@@ -87,22 +87,23 @@ class Path(click.Path):
 @click.option('-h', '--host', default='0.0.0.0',
               show_default=True,
               help='The server host IP.')
-@click.option('cache_root', '-c', '--cache-dir',
+@click.option('base_path', '-b', '--base-path', type=click.Path(),
+              default='/pypi', show_default=True,
+              help='The base path for this application.')
+@click.option('cache_root', '-c', '--cache-root',
               type=Path(file_okay=False, dir_okay=True, writable=True),
-              default='~/.cache/pypare',
-              show_default=True,
+              default='~/.cache/pypare', show_default=True,
               help='The cache directory, where files are stored.',
               )
 @click.option('cache_timeout', '--cache-timeout', type=int,
-              default=60 * 60 * 24,
-              show_default=True,
+              default=60 * 60 * 24, show_default=True,
               help='The age of metatdata, when it will be refreshed.')
 @click.option('plugins', '--plugin', multiple=True, type=list,
               help='A plugin in pkg_resources notation to load.')
 @click.pass_obj
-def cli_cache(obj, **base_config):
+def cli_cache(obj, **pypi_config):
     """Run a simple pypi caching proxy."""
-    conf = config.Config(base_config, debug=obj['debug'])
+    conf = config.AioHttpConfig(pypi_config, debug=obj['debug'])
     conf['plugins'].append('pypare.pypi')
     conf.run()
 

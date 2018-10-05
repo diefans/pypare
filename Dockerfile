@@ -12,6 +12,7 @@ WORKDIR /build
 
 ADD ./src ./src
 COPY ./pyproject.* ./
+COPY ./README.rst ./
 
 RUN DIST=$(poetry build | grep whl | cut -d " " -f 4) \
     && shiv \
@@ -23,18 +24,17 @@ RUN DIST=$(poetry build | grep whl | cut -d " " -f 4) \
 FROM python:3.7-slim as base
 ENV PYTHONUNBUFFERED 1
 ENV PYPARE_LOG_LEVEL INFO
-ENV PYPARE_HOST 0.0.0.0
-ENV PYPARE_PORT 3141
-ENV PYPARE_CACHE_DIR /data
-ENV PYPARE_CACHE_TIMEOUT 86400
+ENV PYPARE_PYPI_HOST 0.0.0.0
+ENV PYPARE_PYPI_PORT 3141
+ENV PYPARE_PYPI_CACHE_ROOT /data
+ENV PYPARE_PYPI_CACHE_TIMEOUT 86400
 
-RUN mkdir /microservice ${PYPARE_CACHE_DIR}
+RUN mkdir /microservice
 WORKDIR /microservice
 
 COPY --from=builder /build/pypare .
 # extract zip app
 RUN ./pypare --version
 
-EXPOSE ${PYPARE_PORT}
+EXPOSE ${PYPARE_PYPI_PORT}
 ENTRYPOINT ["/microservice/pypare"]
-CMD ["pypi"]

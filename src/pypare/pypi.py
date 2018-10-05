@@ -365,7 +365,7 @@ class CachedRelease:
 
 class CachingStreamer:
 
-    log = structlog.get_logger(':'.join((__module__, __qualname__)))
+    log = structlog.get_logger(':'.join((__module__, __qualname__)))    # noqa: E0602
 
     def __init__(self, url, file_path):
         self.url = url
@@ -432,18 +432,19 @@ class CachingStreamer:
                         fut_finished.set_result(True)
                 self.file_path_preparing.rename(self.file_path)
                 self.log.info('Finished download', path=self.file_path)
-            except (asyncio.CancelledError, IOError, Exception) as ex:
+            except (asyncio.CancelledError, IOError, Exception) as ex:      # noqa: W0703
                 fut_finished.set_exception(ex)
                 # cleanup broken download
+                self.log.error('Cleaning broken download',
+                               path=self.file_path_preparing, error=ex)
                 try:
-                    self.log.error('Cleaning broken download',
-                                   path=self.file_path_preparing, error=ex)
                     self.file_path_preparing.unlink()
-                except FileNotFoundError as ex:
+                except FileNotFoundError:
                     pass
-                raise
 
-        fut_enqueue = asyncio.ensure_future(_enqueue_upstream())
+        # TODO use aiojobs ??? to cancel this future graceully
+        # GeneratorExit
+        asyncio.ensure_future(_enqueue_upstream())
         async for data in _stream_queue():
             yield data
 
@@ -476,8 +477,6 @@ class CachingStreamer:
                         inotify.IN.MOVE_SELF | inotify.IN.CLOSE_WRITE):
                     fut_finished.set_result(event)
                     break
-
-        fut_wait = asyncio.ensure_future(_wait_for_event())
 
         async with aiofiles.open(self.file_path_preparing, 'rb') as f:
             while True:
@@ -537,6 +536,8 @@ async def plug_me_in(app):
         cache_root=app.config['cache_root'],
         cache_timeout=app.config['cache_timeout'],
     )
+    log.info('Using cache', cache_root=pypi_cache.cache_root,
+             cache_timeout=pypi_cache.cache_timeout)
 
     pypi_app = aiohttp.web.Application()
     pypi_app['pypi_cache'] = pypi_cache
@@ -551,4 +552,6 @@ async def plug_me_in(app):
             'dirname': jinja2_filter_dirname,
         },
     )
-    app.add_subapp('/pypi', pypi_app)
+    app.add_subapp(app.config['base_path'], pypi_app)
+    log.info('Added subapp', prefix=app.config['base_path'],
+             resources=pypi_app.router._resources)

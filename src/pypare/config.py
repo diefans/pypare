@@ -26,20 +26,10 @@ from . import logging
 
 
 class Config(dict):
-    defaults = {
-        'host': '0.0.0.0',
-        'port': 8080,
-        'plugins_function_name': 'plug_me_in',
-        'plugins': [],
-        'debug': True,
-    }
+    defaults = {}
     """Some config defaults."""
 
-    sanitizer = {
-        'plugins': list,
-        'port': int,
-        'debug': bool
-    }
+    sanitizer = {}
     """Some converter to sanitize config values."""
 
     def __init__(self, config, **kwargs):
@@ -60,6 +50,24 @@ class Config(dict):
         """
         for key, value in config.items():
             self.setdefault(key, value)
+
+
+class AioHttpConfig(Config):
+    defaults = {
+        'host': '0.0.0.0',
+        'port': 8080,
+        'plugins_function_name': 'plug_me_in',
+        'plugins': [],
+        'debug': True,
+    }
+    """Some config defaults."""
+
+    sanitizer = {
+        'plugins': list,
+        'port': int,
+        'debug': bool
+    }
+    """Some converter to sanitize config values."""
 
     def create_app(self):
         """Create the aiohttp app."""
@@ -109,6 +117,8 @@ class Config(dict):
         app = self.create_app()
         self.prepare_app(app)
 
+        log = structlog.get_logger()
+        log.info('Starting aiohttp', host=self['host'], port=self['port'])
         aiohttp.web.run_app(
             app,
             host=self['host'],
