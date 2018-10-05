@@ -4,7 +4,7 @@ build-backend = "poetry.masonry.api"
 
 [tool.poetry]
 name = "pypare"
-version = "0.2.1"
+version = "0.2.2"
 description = "A very simple pypi cache"
 repository = "https://github.com/diefans/pypare"
 readme = "README.rst"
