@@ -84,3 +84,13 @@ Run in docker:
 .. code-block:: bash
 
    docker run -it diefans/pypare:latest pypi
+
+
+Run as zipapp:
+
+.. code-block:: bash
+
+   shiv pypare -c pypare -o ~/.local/bin/pypare -p ~/.pyenv/versions/3.7.0/bin/python
+
+   pypare pypi --cache-dir /tmp/pypi-data
+
