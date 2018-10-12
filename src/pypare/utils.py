@@ -17,6 +17,7 @@ import json
 import pathlib
 
 import aiohttp.web
+import semantic_version
 import structlog
 import yarl
 
@@ -78,6 +79,11 @@ def adapt_path(obj):
 
 @json_adapter(yarl.URL)
 def adapt_url(obj):
+    return str(obj)
+
+
+@json_adapter(semantic_version.Version)
+def adapt_version(obj):
     return str(obj)
 
 

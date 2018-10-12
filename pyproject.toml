@@ -26,6 +26,7 @@ colorama = "^0.3.9"
 aiofile = "^1.4"
 aiofiles = "^0.4.0"
 inotipy = "^0.1.1"
+semantic_version = "^2.6"
 
 [tool.poetry.dev-dependencies]
 pytest = "^3.7"
