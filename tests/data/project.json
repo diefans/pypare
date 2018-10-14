@@ -34,7 +34,7 @@
         "summary": "",
         "version": "0.1.0"
     },
-    "last_serial": 123,
+    "last_serial": 0,
     "releases": {
         "0.1.0": [
             {
@@ -52,7 +52,7 @@
                 "requires_python": ">=3.6,<4.0",
                 "size": 10,
                 "upload_time": "2018-10-04T21:41:31",
-                "url": "/path/to/foobar-0.1.0.txt"
+                "url": "/pypi/test/releases//92/f89b/a34e48001939d59cdd421abd04218990f0b7d311b34c257acf2f6ded05c16148/foobar-0.1.0.txt/foobar-0.1.0.txt"
             }
         ]
     },
@@ -67,12 +67,12 @@
             "filename": "foobar-0.1.0.txt",
             "has_sig": false,
             "md5_digest": "3749f52bb326ae96782b42dc0a97b4c1",
-            "packagetype": "package_type",
+            "packagetype": "packagetype",
             "python_version": "py3",
             "requires_python": ">=3.6,<4.0",
             "size": 10,
             "upload_time": "2018-10-04T21:41:31",
-            "url": "/path/to/foobar-0.1.0.txt"
+            "url": "/pypi/test/releases//92/f89b/a34e48001939d59cdd421abd04218990f0b7d311b34c257acf2f6ded05c16148/foobar-0.1.0.txt/foobar-0.1.0.txt"
         }
     ]
 }

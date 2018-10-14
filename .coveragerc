@@ -2,11 +2,11 @@
 branch = True
 
 source =
-    com.mls.services.engine.microservice
+    pypare
 
 [report]
 show_missing = True
 skip_covered = True
 partial_branches = True
 precision = 2
-fail_under = 60
+#fail_under = 60

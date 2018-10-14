@@ -32,7 +32,10 @@ class Config(dict):
     sanitizer = {}
     """Some converter to sanitize config values."""
 
-    def __init__(self, config, **kwargs):
+    def __init__(self, config=None, **kwargs):
+        if config is None:
+            config = {}
+
         sanitizer = self.sanitizer
         sane_config = (
             (k, sanitizer[k](v) if k in sanitizer else v)
@@ -69,9 +72,9 @@ class AioHttpConfig(Config):
     }
     """Some converter to sanitize config values."""
 
-    def create_app(self):
+    def create_app(self, loop=None):
         """Create the aiohttp app."""
-        app = aiohttp.web.Application()
+        app = aiohttp.web.Application(loop=loop)
         app._debug = self['debug']
         # we hook in our self
         app['config'] = self

@@ -1,6 +1,6 @@
-import abc
 import asyncio
 import collections
+import collections.abc
 import functools
 import hashlib
 import pathlib
@@ -9,13 +9,14 @@ import typing
 import urllib
 
 import aiofiles
+import aiohttp.web
 import aiotask_context
 import attr
 import inotipy
-import semantic_version
+from packaging.version import Version
 import structlog
 
-from . import utils
+from .. import utils
 
 log = structlog.get_logger()
 
@@ -27,7 +28,9 @@ PROJECTS_NAME = 'projects'
 RELEASES_NAME = 'releases'
 LATEST_NAME = 'latest'
 METADATA_FILENAME = 'metadata.json'
+UPSTREAM_METADATA_FILENAME = 'upstream-metadata.json'
 FILES_NAME = 'files'
+PREPARING_SUFFIX = '.preparing'
 
 
 def ensure_cls(cls, *containers, key_converter=None):
@@ -54,15 +57,25 @@ def ensure_cls(cls, *containers, key_converter=None):
 
 
 def ensure_semver(val):
-    if isinstance(val, semantic_version.Version):
+    if isinstance(val, Version):
         return val
-    val = semantic_version.Version(val)
+    val = Version(val)
     return val
 
 
 class str_keyed_dict(dict):
 
     """A str keyed dict."""
+
+    def __init__(self, *args, **kwargs):
+        if len(args) == 1:
+            it, = args
+            super().__init__((
+                (str(key), value)
+                for key, value in (it
+                                   if isinstance(it, collections.abc.Iterable)
+                                   else it.iter())
+            ), **kwargs)
 
     def __setitem__(self, key, value):
         super().__setitem__(str(key), value)
@@ -121,117 +134,32 @@ class MetadataRetrievingError(CacheException):
     pass
 
 
-class ACL:      # noqa: R0903
-    allow = 'access:allow'
-    deny = 'accces:deny'
-    unauthorized = 'auth:unauthorized'
-    authorized = 'auth:authorized'
-    admin = 'perm:admin'
-    group = 'perm:group'
-    read = 'perm:read'
-    write = 'perm:write'
-    all = 'perm:all'
-
-
-@attr.s(kw_only=True, auto_attribs=True)        # noqa: R0903
-class Cache:        # noqa: R0903
-    root: pathlib.Path = attr.ib(converter=pathlib.Path)
-
-    def path(self, *path):
-        """Return a path relativ to the cache root."""
-        return self.root.joinpath(*path)
-
-    def channel(self, name):
-        channel = Channel.from_cache(self, name)
-        return channel
-
-
-@attr.s(auto_attribs=True)        # noqa: R0903
-class ACE:
-    permits: bool
-    principal: str
-    permission: str
-
-
-@attr.s(kw_only=True, auto_attribs=True)        # noqa: R0903
-class Channel(Cache):
-    name: str = 'pypi'
-    upstream_enabled: bool = True
-    acl: typing.List[ACE] = [ACE(ACL.allow, ACL.unauthorized, ACL.read)]
-    # TODO timeout goes to channel
-    timeout: float = DEFAULT_CACHE_TIMEOUT
-
-    @classmethod
-    def from_path(cls, path, name):
-        channel = Channel(root=path.joinpath(CHANNELS_NAME, name), name=name)
-        return channel
-
-    @classmethod
-    def from_cache(cls, cache, name):
-        channel = Channel(root=cache.path(CHANNELS_NAME, name), name=name)
-        return channel
-
-    def projects_path(self, *path):
-        projects_path = self.path(PROJECTS_NAME, *path)
-        return projects_path
-
-    def releases_path(self, *path):
-        releases_path = self.path(RELEASES_NAME, *path)
-        return releases_path
-
-    def project(self, project_name):
-        project = Project(channel=self, name=project_name)
-        return project
-
-    async def update_project(self, data):
-        """
-        Create or update a projects metadata structures.
-
-        channels/<channel>
-            |
-            +- projects/<project[0]>/<project>/<version>
-            |   |
-            |   +- metadata.json
-            |   |
-            |   +- files/<packagetype>.json <-+
-            |                                 |
-            +- releases                       |
-                |                             |
-                +- <path>/metadata.json ------+
-        """
-        metadata = Metadata.from_dict(data)
-        project_name = metadata.info.name
-        project = self.project(project_name)
-
-        await project.update_metadata(metadata)
-
-
 @attr.s(kw_only=True, auto_attribs=True)        # noqa: R0903
 class Info:
-    author: str = attr.ib()
-    author_email: str = attr.ib()
-    bugtrack_url: str = attr.ib()
-    classifiers: typing.List[str] = attr.ib()
-    description: str = attr.ib()
-    description_content_type: str = attr.ib()
-    docs_url: typing.List[str] = attr.ib()
-    download_url: str = attr.ib()
-    downloads: typing.Dict[str, int] = attr.ib()
-    home_page: str = attr.ib()
-    keywords: str = attr.ib()
-    license: str = attr.ib()
-    maintainer: str = attr.ib()
-    maintainer_email: str = attr.ib()
-    name: str = attr.ib()
-    package_url: str = attr.ib()
-    platform: str = attr.ib()
-    project_url: str = attr.ib()
-    project_urls: typing.List[str] = attr.ib()
-    release_url: str = attr.ib()
-    requires_dist: typing.List[str] = attr.ib()
-    requires_python: str = attr.ib()
-    summary: str = attr.ib()
-    version: semantic_version.Version = attr.ib(converter=ensure_semver)
+    author: str
+    author_email: str
+    bugtrack_url: str
+    classifiers: typing.List[str]
+    description: str
+    description_content_type: str
+    docs_url: typing.List[str]
+    download_url: str
+    downloads: typing.Dict[str, int]
+    home_page: str
+    keywords: str
+    license: str
+    maintainer: str
+    maintainer_email: str
+    name: str
+    package_url: str
+    platform: str
+    project_url: str
+    project_urls: typing.List[str]
+    release_url: str
+    requires_dist: typing.List[str]
+    requires_python: str
+    summary: str
+    version: Version = attr.ib(converter=ensure_semver)
 
     @classmethod
     def from_dict(cls, dct):
@@ -241,34 +169,63 @@ class Info:
 
 @attr.s(kw_only=True, auto_attribs=True)
 class Release:
-    comment_text: str = attr.ib()
-    digests: typing.Dict[str, str] = attr.ib()
-    downloads: int = attr.ib()
-    filename: str = attr.ib()
-    has_sig: bool = attr.ib()
-    md5_digest: str = attr.ib()
-    packagetype: str = attr.ib()
-    python_version: str = attr.ib()
-    requires_python: str = attr.ib()
-    size: int = attr.ib()
-    upload_time: str = attr.ib()
-    url: str = attr.ib()
-
-    @utils.reify
-    def upstream_url(self):
-        upstream_url = self.url
-        return upstream_url
-
-    @utils.reify
-    def file_name(self):
-        parsed_upstream_url = urllib.parse.urlparse(self.upstream_url)
-        file_name = pathlib.Path(parsed_upstream_url.path).name
-        return file_name
+    comment_text: str
+    digests: typing.Dict[str, str]
+    downloads: int
+    filename: str
+    has_sig: bool
+    md5_digest: str
+    packagetype: str
+    python_version: str
+    requires_python: str
+    size: int
+    upload_time: str
+    url: str
 
     @classmethod
     def from_dict(cls, dct):
         release = cls(**dct)
         return release
+
+    @classmethod
+    async def from_channel_release_url(cls, channel, relative_path,
+                                       upstream=False):
+        """Create a release from the path relative to channel releases.
+
+        :param channel: The channel.
+        :param relative_path: The relative path to channel releases.
+        'param upstream: True if the upstream metadata should be loaded.
+        """
+        path = channel.releases_path(relative_path)\
+            .parent.joinpath(METADATA_FILENAME
+                             if not upstream
+                             else UPSTREAM_METADATA_FILENAME)
+        async with aiofiles.open(path) as f:
+            data = utils.json_loads(await f.read())
+            release = Release.from_dict(data)
+            return release
+
+    @utils.reify
+    def path_hashs(self):
+        """A unique path to the release.
+
+        We assume that the name of the file is unique over project and version
+        and packagetype.
+        """
+        unique_name = ''.join((
+            self.filename,
+        )).encode('utf-8')
+        path_hashs = [
+            hashlib.blake2s(unique_name,                       # noqa: E1101
+                            digest_size=digest_size,
+                            person=b'ChxRel').hexdigest()
+            for digest_size in (1, 2, hashlib.blake2s.MAX_DIGEST_SIZE)  # noqa: E1101
+        ]
+        return path_hashs
+
+    def channel_path(self, channel):
+        path = channel.releases_path(*self.path_hashs)
+        return path
 
 
 @attr.s(kw_only=True, auto_attribs=True)
@@ -289,7 +246,105 @@ class Metadata:      # noqa: R0903
         return project
 
     def __json__(self):
-        return attr.asdict(self)
+        dct = attr.asdict(self, dict_factory=str_keyed_dict)
+        return dct
+
+
+class ACL:      # noqa: R0903
+    allow = 'access:allow'
+    deny = 'accces:deny'
+    unauthorized = 'auth:unauthorized'
+    authorized = 'auth:authorized'
+    admin = 'perm:admin'
+    group = 'perm:group'
+    read = 'perm:read'
+    write = 'perm:write'
+    all = 'perm:all'
+
+
+@attr.s(kw_only=True, auto_attribs=True)        # noqa: R0903
+class Cache:        # noqa: R0903
+    root: pathlib.Path = attr.ib(converter=pathlib.Path)
+
+    def path(self, *path):
+        """Return a path relativ to the cache root."""
+        return self.root.joinpath(*path)
+
+    def channel(self, name, **kwargs):
+        channel = Channel.from_cache(self, name=name, **kwargs)
+        return channel
+
+
+@attr.s(auto_attribs=True)        # noqa: R0903
+class ACE:
+    permits: bool
+    principal: str
+    permission: str
+
+
+@attr.s(kw_only=True, auto_attribs=True)        # noqa: R0903
+class Channel(Cache):
+    name: str = 'pypi'
+    upstream_enabled: bool = True
+    acl: typing.List[ACE] = [ACE(ACL.allow, ACL.unauthorized, ACL.read)]
+    timeout: float = DEFAULT_CACHE_TIMEOUT
+    releases_route: aiohttp.web.AbstractRoute
+    """The route which handles releases requests."""
+
+    @classmethod
+    def from_path(cls, path, *, name, **kwargs):
+        channel = Channel(root=path.joinpath(CHANNELS_NAME, name), name=name,
+                          **kwargs)
+        return channel
+
+    @classmethod
+    def from_cache(cls, cache, *, name, **kwargs):
+        channel = Channel(root=cache.path(CHANNELS_NAME, name), name=name,
+                          **kwargs)
+        return channel
+
+    def projects_path(self, *path):
+        projects_path = self.path(PROJECTS_NAME, *path)
+        return projects_path
+
+    def releases_path(self, *path):
+        releases_path = self.path(RELEASES_NAME, *path)
+        return releases_path
+
+    def project(self, project_name):
+        """Retrun the project.
+
+        If this channel is an upstream channel, we create an
+        :py:obj:`UpstreamProject`
+        """
+        cls = UpstreamProject if self.upstream_enabled else Project
+        project = cls(channel=self, name=project_name)
+        return project
+
+    async def store_project(self, data):
+        """
+        Create or update a projects metadata structures.
+
+        :param data: the raw parsed metadata, as the json API from pypi
+        provides it.
+
+        channels/<channel>
+            |
+            +- projects/<project[0]>/<project>/<version>
+            |   |
+            |   +- metadata.json
+            |   |
+            |   +- files/<packagetype>.json <-+
+            |                                 |
+            +- releases                       |
+                |                             |
+                +- <path>/metadata.json ------+
+        """
+        metadata = Metadata.from_dict(data)
+        project_name = metadata.info.name
+        project = self.project(project_name)
+
+        await project.store_metadata(metadata)
 
 
 @attr.s(kw_only=True, auto_attribs=True)
@@ -297,8 +352,10 @@ class Project:
 
     """A Project embodies a pypi project."""
 
-    channel: Channel = attr.ib()
-    name: str = attr.ib()
+    log = structlog.get_logger(':'.join((__module__, __qualname__)))    # noqa: E0602
+
+    channel: Channel
+    name: str
 
     @utils.reify
     def path(self):
@@ -319,30 +376,21 @@ class Project:
 
     @property
     def latest_version(self):
-        """The semantic version number of the latest version."""
+        """The version number of the latest version."""
         if not self.path_latest.is_symlink():
             return None
         name = self.path_latest.resolve().name
-        version = semantic_version.Version(name)
+        version = Version(name)
         return version
 
-    @property
-    def needs_update(self):
-        """Either there is no latest version or the timeout is over."""
-        try:
-            return (time.time()
-                    - self.path_latest.stat().st_mtime) >= self.timeout
-        except FileNotFoundError:
-            return True
-
     def version_path(self, version):
-        """The path of a semantic version."""
+        """The path of a version."""
         # we need to cast version nto str
         path = self.path.joinpath(str(version))
         return path
 
     def info_path(self, version):
-        """The path to the metadata of a semantic version."""
+        """The path to the metadata of a version."""
         path = self.version_path(version).joinpath(METADATA_FILENAME)
         return path
 
@@ -351,9 +399,11 @@ class Project:
         if version is None:
             version = self.latest_version
 
-        async with aiofiles.open(self.info_path(version)) as f:
+        info_path = self.info_path(version)
+        async with aiofiles.open(info_path) as f:
             data = await f.read()
             info = Info.from_dict(utils.json_loads(data))
+            self.log.debug('Loaded project info', path=info_path)
         # contains all version releases
         releases = collections.defaultdict(list)
         # contans only releases of the selected version
@@ -363,12 +413,14 @@ class Project:
             name = version_path.name
             if name in ('latest',):
                 continue
-            found_version = semantic_version.Version(name)
+            found_version = Version(name)
 
             for path in version_path.glob('files/*.json'):
                 async with aiofiles.open(path) as f:
                     data = await f.read()
                     release = Release.from_dict(utils.json_loads(data))
+                    self.log.debug('Loaded release metadata', path=path,
+                                   version=found_version)
                     releases[found_version].append(release)
                     if found_version == version:
                         urls.append(release)
@@ -380,11 +432,12 @@ class Project:
         )
         return metadata
 
-    async def update_metadata(self, metadata):
-        await self.update_info(metadata.info)
-        await self.update_releases(metadata.releases)
+    async def store_metadata(self, metadata):
+        self.log.debug('Update metadata', project=self)
+        await self.store_info(metadata.info)
+        await self.store_releases(metadata.releases)
 
-    async def update_info(self, info):
+    async def store_info(self, info):
         # lookup the latest info
         version_path = self.version_path(info.version)
         info_path = version_path.joinpath(METADATA_FILENAME)
@@ -392,18 +445,20 @@ class Project:
         async with aiofiles.open(info_path, 'x') as f:
             data = utils.json_dumps(attr.asdict(info))
             await f.write(data)
+            self.log.debug('Stored project info', name=self.name,
+                           path=info_path, version=info.version)
 
         if self.latest_version is None or info.version > self.latest_version:
             self.path_latest.symlink_to(
                 version_path.relative_to(self.path_latest.parent)
             )
 
-    async def update_releases(self, releases):
+    async def store_releases(self, releases):
         for version, packages in releases.items():
             for release in packages:
-                await self.update_release(version, release)
+                await self.store_release(version, release)
 
-    async def update_release(self, version, release):
+    async def store_release(self, version, release):
         """Update a package release."""
         version_path = self.version_path(version)
         release_metadata_path = version_path.joinpath(
@@ -416,11 +471,12 @@ class Project:
             data = utils.json_dumps(attr.asdict(release,
                                                 dict_factory=str_keyed_dict))
             await f.write(data)
+            self.log.debug('Stored release metadata', version=version,
+                           path=release_metadata_path)
 
         # link metadata to release path
-        url_release_path_base = parse_url_path(release.url).parent
-        release_path_metadata_link = self.channel.releases_path(
-            url_release_path_base.relative_to('/'),
+        channel_release_path = release.channel_path(self.channel)
+        release_path_metadata_link = channel_release_path.joinpath(
             METADATA_FILENAME
         )
         ensure_parents(release_path_metadata_link)
@@ -429,33 +485,103 @@ class Project:
 
 @attr.s(kw_only=True, auto_attribs=True)
 class UpstreamProject(Project):
+
+    log = structlog.get_logger(':'.join((__module__, __qualname__)))    # noqa: E0602
+
     api_base: str = 'https://pypi.org/pypi'
 
-    @utils.reify
-    def url(self):
+    @property
+    def mtime(self):
+        try:
+            max_mtime = max(path.stat().st_mtime
+                            for path in self.path.glob('**/*') if path.is_file())
+            return max_mtime
+        except ValueError:
+            return None
+
+    @property
+    def needs_update(self):
+        """Either there is no latest version or the timeout is over."""
+        mtime = self.mtime
+        return (time.time() - mtime) >= self.channel.timeout if mtime else True
+
+    def url(self, version=None):
+        """The upstream url for a or the latest version."""
         def _gen():
             yield self.api_base
             yield self.name
-            if self.version:
-                yield self.version
+            if version:
+                yield str(version)
             yield 'json'
         url = '/'.join(_gen())
         return url
 
-    async def get_metadata(self):
+    async def get_metadata(self, version=None):
+        if not self.needs_update:
+            metadata = await super().get_metadata(version)
+            return metadata
+
+        # update and cache
+        url = self.url(version)
         client_session = aiotask_context.get('client_session')
-        async with client_session.get(self.url) as r:
+        async with client_session.get(url) as r:
             if r.status == 200:
-                log.info('Loading metadata from upstream', url=self.url)
-                metadata = await r.json()
-                return Metadata.from_dict(metadata)
+                data = await r.json()
+                metadata = Metadata.from_dict(data)
+                await self.store_metadata(metadata)
+                self.log.info('Loading metadata from upstream', response=r)
+                # TODO find out if it is better also to inject our urls in the
+                # metadata urls section
+                # query metadata after update, since urls are not injected in
+                # metadata.urls
+                metadata = await super().get_metadata(version)
+                return metadata
 
             if r.status == 404:
-                log.error('Metadata not found', project=self)
+                log.error('Metadata not found', project=self, response=r)
                 raise MetadataNotFound(self, r)
 
-            log.error('Error while retrieving metadata', project=self)
+            self.log.error('Error while retrieving metadata', project=self,
+                           response=r)
             raise MetadataRetrievingError(self, r)
+
+    async def store_release(self, version, release):
+        """Update a package release.
+
+        The release url is transformed to point to ourself, but the original
+        upstream metadata are stored too for later processing.
+
+        """
+        # create the our own url
+        channel_release_path = release.channel_path(self.channel)
+        # store upstream metadata
+        upstream_release_metadata_path = channel_release_path.joinpath(
+            UPSTREAM_METADATA_FILENAME)
+        ensure_parents(upstream_release_metadata_path)
+
+        async with aiofiles.open(upstream_release_metadata_path, 'x') as f:
+            data = utils.json_dumps(attr.asdict(release,
+                                                dict_factory=str_keyed_dict))
+            await f.write(data)
+            self.log.debug('Stored upstream release metadata', version=version,
+                           path=upstream_release_metadata_path)
+
+        # inject our own url
+        release.url = self.release_url(release)
+        await super().store_release(version, release)
+
+    def release_url(self, release):
+        """Create the release url for the actual configuration."""
+        channel_release_path = release.channel_path(self.channel)
+        path = pathlib.Path('/')\
+            .joinpath(*release.path_hashs)\
+            .joinpath(release.filename)
+        url = self.channel.releases_route.url_for(
+            channel_name=self.channel.name,
+            path=str(path),
+            filename=release.filename
+        )
+        return url
 
 
 @attr.s(kw_only=True, auto_attribs=True)
@@ -555,26 +681,15 @@ class CachedProject(UpstreamProject):
 
 @attr.s(kw_only=True, auto_attribs=True)
 class ReleaseFile:
-    channel: Channel = attr.ib()
-    path: str = attr.ib()
-    metadata: Release = attr.ib(factory=dict)
+    channel: Channel
+    release: Release
+    path: pathlib.Path
 
     @classmethod
-    def from_channel_url(cls, channel, url, metadata):
-        """We assume that the url is unique over channelname and filename."""
-        parsed_url = urllib.parse.urlparse(url)
-        unique_name = ''.join((
-            channel.name,
-            pathlib.Path(parsed_url.path).name
-        )).encode('utf-8')
-        path_hashs = [
-            hashlib.blake2s(unique_name,                       # noqa: E1101
-                            digest_size=digest_size,
-                            person=b'cacheReL').hexdigest()
-            for digest_size in (1, 2, hashlib.blake2s.MAX_DIGEST_SIZE)  # noqa: E1101
-        ]
-        path = pathlib.Path().joinpath(*path_hashs)
-        release_file = cls(channel=channel, path=path, metadata=metadata)
+    async def from_channel_release_url(cls, channel, relative_path):
+        release = await Release.from_channel_release_url(channel, relative_path)
+        path = channel.releases_path(relative_path)
+        release_file = cls(channel=channel, release=release, path=path)
         return release_file
 
     @utils.reify
@@ -638,9 +753,12 @@ class ReleaseFile:
         return streamer
 
 
+@attr.s(kw_only=True, auto_attribs=True)
 class CachingStreamer:
 
     log = structlog.get_logger(':'.join((__module__, __qualname__)))    # noqa: E0602
+
+    release: Release
 
     def __init__(self, url, file_path):
         self.url = url

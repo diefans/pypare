@@ -23,8 +23,10 @@ import jinja2
 import pkg_resources
 import structlog
 
-from .. import utils
 from . import model
+from .. import utils
+
+RELEASES_ROUTE = 'releases'
 
 log = structlog.get_logger()
 routes = aiohttp.web.RouteTableDef()
@@ -35,6 +37,7 @@ re_semver = re.compile(
     r'(?:-[\da-z-]+(?:\.[\da-z-]+)*)'
     r'?(?:\+[\da-z-]+(?:\.[\da-z-]+)*)?\b')
 
+re.compile(r'^(\d+)\.(\d+)\.(\d+)(?:-([0-9a-zA-Z.-]+))?(?:\+([0-9a-zA-Z.-]+))?$')
 
 @routes.get('/')
 async def index(request):
@@ -48,19 +51,21 @@ async def index(request):
     return response
 
 
-@routes.get(r'/{channel_name}/release/{path:[a-f0-9/]+}/{file}', name='release')
+@routes.get(r'/{channel_name}/'
+            f'{model.RELEASES_NAME}' r'/{path:[a-f0-9/]+}/{filename}',
+            name=RELEASES_ROUTE)
 async def serve_release(request):
     channel_name = request.match_info['channel_name']
-    channel = model.Channel(name=channel_name)
-
     path = request.match_info['path']
-    release_file = ReleaseFile.from_path(path)
+    cache = request.config_dict['cache']
 
-    pypi_cache = request.config_dict['pypi_cache']
-    cached_release = await CachedRelease.from_cached_metadata(
-        cache=pypi_cache,
-        path=pathlib.Path(request.match_info['path'])
+    channel = await model.Channel.from_cache(cache=cache, name=channel_name)
+
+    # TODO assert filename == release.filename
+    release_file = model.ReleaseFile.from_channel_release_url(
+        channel, path
     )
+
     headers = {
         'Content-disposition':
         f'attachment; filename={cached_release.file_name}'
@@ -81,13 +86,14 @@ async def get_project(request):
     channel_name = request.match_info['channel_name']
     project_name = request.match_info['project_name']
     version = request.match_info.get('version', None)
+    version = model.Version(version) if version else None
     cache = request.config_dict['cache']
 
-    channel = model.Channel(cache=cache, name=channel_name)
-    project = model.CachedProject(
-        channel=channel,
-        name=project_name,
-        version=version)
+    channel = model.Channel.from_cache(
+        cache=cache, name=channel_name,
+        releases_route=request.app.router[RELEASES_ROUTE]
+    )
+    project = channel.project(project_name)
 
     try:
         metadata = await project.get_metadata()
@@ -121,12 +127,11 @@ async def plug_me_in(app):
     await app.plugin('pypare.plugins:plugin_task_context')
     cache = model.Cache(
         root=app.config['cache_root'],
-        timeout=app.config['cache_timeout'],
+        # timeout=app.config['cache_timeout'],
     )
-    log.info('Using cache', cache_root=cache.root,
-             cache_timeout=cache.timeout)
+    log.info('Using cache', cache_root=cache.root)
 
-    pypi_app = aiohttp.web.Application()
+    pypi_app = app.config['pypi_app'] = aiohttp.web.Application()
     pypi_app['cache'] = cache
     pypi_app.add_routes(routes)
 
