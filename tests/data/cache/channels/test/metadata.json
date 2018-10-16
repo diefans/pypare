@@ -1,0 +1,8 @@
+{
+    "name": "test",
+    "upstream_enabled": false,
+    "acl": [
+        ["access:allow", "auth:all", "perm:read"]
+    ],
+    "timeout": 86400
+}

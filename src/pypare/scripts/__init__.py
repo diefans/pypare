@@ -14,12 +14,12 @@
 
 import asyncio
 import importlib
-import pathlib
+from pathlib import Path
 
 import click
 import structlog
 
-from .. import config, logging, __version__
+from .. import __version__, config, logging
 
 
 def find_loop_specs():
@@ -55,6 +55,12 @@ def set_loop_policy(event_loop):
         except ImportError:
             log.warning("tokio is not available.")
 
+    else:
+        # set default policy
+        asyncio.set_event_loop_policy(asyncio.DefaultEventLoopPolicy())
+    # loop = asyncio.get_event_loop()
+    # return loop
+
 
 @click.group(context_settings=logging.CONTEXT_SETTINGS)
 @click.option('--log-level', default=logging.DEFAULT_LOGGING_LEVEL,
@@ -73,10 +79,10 @@ def cli(obj, log_level, event_loop):
     set_loop_policy(event_loop)
 
 
-class Path(click.Path):
+class ClickPath(click.Path):
     def convert(self, value, param, ctx):
         value = super().convert(value, param, ctx)
-        value = pathlib.Path(value).expanduser().resolve()
+        value = Path(value).expanduser().resolve()
         return value
 
 
@@ -91,13 +97,18 @@ class Path(click.Path):
               default='/pypi', show_default=True,
               help='The base path for this application.')
 @click.option('cache_root', '-c', '--cache-root',
-              type=Path(file_okay=False, dir_okay=True, writable=True),
+              type=ClickPath(file_okay=False, dir_okay=True, writable=True),
               default='~/.cache/pypare', show_default=True,
               help='The cache directory, where files are stored.',
               )
-@click.option('cache_timeout', '--cache-timeout', type=int,
-              default=60 * 60 * 24, show_default=True,
-              help='The age of metatdata, when it will be refreshed.')
+@click.option('upstream_channel_name', '-u', '--upstream-channel',
+              default='pypi', help='The name of the upstream channel.')
+@click.option('upstream_channel_api_base', '--upstream-channel-url',
+              default='https://pypi.org/pypi',
+              help='The base API URL of the upstream channel.')
+@click.option('upstream_channel_timeout', '--upstream-channel-timeout',
+              default=60 * 60 * 24,
+              help='The timeout upstream is aksed for new metadata')
 @click.option('plugins', '--plugin', multiple=True, type=list,
               help='A plugin in pkg_resources notation to load.')
 @click.pass_obj

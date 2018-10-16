@@ -3,17 +3,16 @@ import collections
 import collections.abc
 import functools
 import hashlib
-import pathlib
+from pathlib import Path
 import time
 import typing
-import urllib
 
 import aiofiles
 import aiohttp.web
 import aiotask_context
 import attr
 import inotipy
-from packaging.version import Version
+from packaging import version as pkg_version
 import structlog
 
 from .. import utils
@@ -57,9 +56,9 @@ def ensure_cls(cls, *containers, key_converter=None):
 
 
 def ensure_semver(val):
-    if isinstance(val, Version):
+    if isinstance(val, pkg_version._BaseVersion):
         return val
-    val = Version(val)
+    val = pkg_version.parse(val)
     return val
 
 
@@ -87,13 +86,6 @@ def ensure_parents(path):
         path.parent.mkdir(parents=True)
 
 
-def parse_url_path(url):
-    """Get the path of the url."""
-    parsed_url = urllib.parse.urlparse(url)
-    path = pathlib.Path(parsed_url.path)
-    return path
-
-
 def symlink_relative_to(from_path, to_path):
     """Create a relative symlink.
 
@@ -108,17 +100,20 @@ def symlink_relative_to(from_path, to_path):
         if to_parts[i] == from_parts[i]:
             i += 1
             continue
-        common_path = pathlib.Path(*from_parts[:i])
+        common_path = Path(*from_parts[:i])
         break
 
     if common_path:
-        prefix_path = pathlib.Path(
+        prefix_path = Path(
             *['..']
             # parents containes the dot dir as last parent
             # so we start from parent
             * len(from_path.relative_to(common_path).parent.parents)
         )
-        to_path = prefix_path.joinpath(to_path.relative_to(common_path))
+        to_path = prefix_path / to_path.relative_to(common_path)
+
+    if from_path.exists():
+        from_path.unlink()
     from_path.symlink_to(to_path)
 
 
@@ -159,7 +154,7 @@ class Info:
     requires_dist: typing.List[str]
     requires_python: str
     summary: str
-    version: Version = attr.ib(converter=ensure_semver)
+    version: pkg_version._BaseVersion = attr.ib(converter=ensure_semver)
 
     @classmethod
     def from_dict(cls, dct):
@@ -186,24 +181,6 @@ class Release:
     def from_dict(cls, dct):
         release = cls(**dct)
         return release
-
-    @classmethod
-    async def from_channel_release_url(cls, channel, relative_path,
-                                       upstream=False):
-        """Create a release from the path relative to channel releases.
-
-        :param channel: The channel.
-        :param relative_path: The relative path to channel releases.
-        'param upstream: True if the upstream metadata should be loaded.
-        """
-        path = channel.releases_path(relative_path)\
-            .parent.joinpath(METADATA_FILENAME
-                             if not upstream
-                             else UPSTREAM_METADATA_FILENAME)
-        async with aiofiles.open(path) as f:
-            data = utils.json_loads(await f.read())
-            release = Release.from_dict(data)
-            return release
 
     @utils.reify
     def path_hashs(self):
@@ -255,23 +232,23 @@ class ACL:      # noqa: R0903
     deny = 'accces:deny'
     unauthorized = 'auth:unauthorized'
     authorized = 'auth:authorized'
+    all = 'auth:all'
     admin = 'perm:admin'
     group = 'perm:group'
     read = 'perm:read'
     write = 'perm:write'
-    all = 'perm:all'
 
 
 @attr.s(kw_only=True, auto_attribs=True)        # noqa: R0903
 class Cache:        # noqa: R0903
-    root: pathlib.Path = attr.ib(converter=pathlib.Path)
+    root: Path = attr.ib(converter=Path)
 
     def path(self, *path):
         """Return a path relativ to the cache root."""
-        return self.root.joinpath(*path)
+        return self.root / Path(*path)
 
-    def channel(self, name, **kwargs):
-        channel = Channel.from_cache(self, name=name, **kwargs)
+    async def channel(self, name, **kwargs):
+        channel = await Channel.from_cache(self, name=name, **kwargs)
         return channel
 
 
@@ -285,23 +262,59 @@ class ACE:
 @attr.s(kw_only=True, auto_attribs=True)        # noqa: R0903
 class Channel(Cache):
     name: str = 'pypi'
-    upstream_enabled: bool = True
     acl: typing.List[ACE] = [ACE(ACL.allow, ACL.unauthorized, ACL.read)]
     timeout: float = DEFAULT_CACHE_TIMEOUT
+    upstream_enabled: bool = True
+    upstream_api_base: str = 'https://pypi.org/pypi'
     releases_route: aiohttp.web.AbstractRoute
     """The route which handles releases requests."""
 
     @classmethod
-    def from_path(cls, path, *, name, **kwargs):
-        channel = Channel(root=path.joinpath(CHANNELS_NAME, name), name=name,
-                          **kwargs)
+    async def from_cache(cls, cache, *, name, **kwargs):
+        root = cache.path(CHANNELS_NAME, name)
+        channel = await cls.from_path(root, name=name, **kwargs)
         return channel
 
     @classmethod
-    def from_cache(cls, cache, *, name, **kwargs):
-        channel = Channel(root=cache.path(CHANNELS_NAME, name), name=name,
-                          **kwargs)
+    def from_cache_only(cls, cache, *, name, **kwargs):
+        root = cache.path(CHANNELS_NAME, name)
+        channel = cls(root=root, **kwargs)
         return channel
+
+    @classmethod
+    async def from_path(cls, root, **kwargs):
+        async with aiofiles.open(root / METADATA_FILENAME) as f:
+            data = utils.json_loads(await f.read())
+            data.update(kwargs)
+            channel = cls(root=root, **data)
+            return channel
+
+    async def store(self):
+        data = attr.asdict(self, dict_factory=str_keyed_dict)
+        # sanitize
+        del data['releases_route']
+        del data['root']
+
+        metadata_path = self.root / METADATA_FILENAME
+        ensure_parents(metadata_path)
+        async with aiofiles.open(metadata_path, 'x') as f:
+            await f.write(utils.json_dumps(data))
+
+    async def release(self, path):
+        """The release for this path."""
+        release_path = self.releases_path(path) / METADATA_FILENAME
+        async with aiofiles.open(release_path) as f:
+            data = utils.json_loads(await f.read())
+            release = Release.from_dict(data)
+            return release
+
+    async def upstream_release(self, path):
+        """The upstream release for this path."""
+        release_path = self.releases_path(path) / UPSTREAM_METADATA_FILENAME
+        async with aiofiles.open(release_path) as f:
+            data = utils.json_loads(await f.read())
+            release = Release.from_dict(data)
+            return release
 
     def projects_path(self, *path):
         projects_path = self.path(PROJECTS_NAME, *path)
@@ -317,8 +330,11 @@ class Channel(Cache):
         If this channel is an upstream channel, we create an
         :py:obj:`UpstreamProject`
         """
-        cls = UpstreamProject if self.upstream_enabled else Project
-        project = cls(channel=self, name=project_name)
+        if self.upstream_enabled:
+            project = UpstreamProject(channel=self, name=project_name,
+                                      api_base=self.upstream_api_base)
+        else:
+            project = Project(channel=self, name=project_name)
         return project
 
     async def store_project(self, data):
@@ -366,13 +382,7 @@ class Project:
     @utils.reify
     def path_latest(self):
         """The directory of the latest version."""
-        return self.path.joinpath(LATEST_NAME)
-
-    @utils.reify
-    def path_latest_info(self):
-        """The info matadata for the latest version."""
-        path = self.path_latest.joinpath(METADATA_FILENAME)
-        return path
+        return self.path / LATEST_NAME
 
     @property
     def latest_version(self):
@@ -380,21 +390,21 @@ class Project:
         if not self.path_latest.is_symlink():
             return None
         name = self.path_latest.resolve().name
-        version = Version(name)
+        version = pkg_version.parse(name)
         return version
 
     def version_path(self, version):
         """The path of a version."""
         # we need to cast version nto str
-        path = self.path.joinpath(str(version))
+        path = self.path / str(version)
         return path
 
     def info_path(self, version):
         """The path to the metadata of a version."""
-        path = self.version_path(version).joinpath(METADATA_FILENAME)
+        path = self.version_path(version) / METADATA_FILENAME
         return path
 
-    async def get_metadata(self, version=None):
+    async def load_metadata(self, version=None):
         """Return the metadata for that project and version."""
         if version is None:
             version = self.latest_version
@@ -413,7 +423,7 @@ class Project:
             name = version_path.name
             if name in ('latest',):
                 continue
-            found_version = Version(name)
+            found_version = pkg_version.parse(name)
 
             for path in version_path.glob('files/*.json'):
                 async with aiofiles.open(path) as f:
@@ -440,9 +450,9 @@ class Project:
     async def store_info(self, info):
         # lookup the latest info
         version_path = self.version_path(info.version)
-        info_path = version_path.joinpath(METADATA_FILENAME)
+        info_path = version_path / METADATA_FILENAME
         ensure_parents(info_path)
-        async with aiofiles.open(info_path, 'x') as f:
+        async with aiofiles.open(info_path, 'w') as f:
             data = utils.json_dumps(attr.asdict(info))
             await f.write(data)
             self.log.debug('Stored project info', name=self.name,
@@ -461,24 +471,26 @@ class Project:
     async def store_release(self, version, release):
         """Update a package release."""
         version_path = self.version_path(version)
-        release_metadata_path = version_path.joinpath(
-            FILES_NAME, release.packagetype
+        release_metadata_path = (
+            version_path / FILES_NAME / release.filename
         ).with_suffix('.json')
         ensure_parents(release_metadata_path)
 
         # write metadata
-        async with aiofiles.open(release_metadata_path, 'x') as f:
+        self.log.debug('Storing release metadata', version=version,
+                       filename=release.filename,
+                       path=release_metadata_path)
+        async with aiofiles.open(release_metadata_path, 'w') as f:
             data = utils.json_dumps(attr.asdict(release,
                                                 dict_factory=str_keyed_dict))
             await f.write(data)
             self.log.debug('Stored release metadata', version=version,
+                           filename=release.filename,
                            path=release_metadata_path)
 
         # link metadata to release path
         channel_release_path = release.channel_path(self.channel)
-        release_path_metadata_link = channel_release_path.joinpath(
-            METADATA_FILENAME
-        )
+        release_path_metadata_link = channel_release_path / METADATA_FILENAME
         ensure_parents(release_path_metadata_link)
         symlink_relative_to(release_path_metadata_link, release_metadata_path)
 
@@ -494,16 +506,11 @@ class UpstreamProject(Project):
     def mtime(self):
         try:
             max_mtime = max(path.stat().st_mtime
-                            for path in self.path.glob('**/*') if path.is_file())
+                            for path in self.path.glob('**/*')
+                            if path.is_file())
             return max_mtime
         except ValueError:
             return None
-
-    @property
-    def needs_update(self):
-        """Either there is no latest version or the timeout is over."""
-        mtime = self.mtime
-        return (time.time() - mtime) >= self.channel.timeout if mtime else True
 
     def url(self, version=None):
         """The upstream url for a or the latest version."""
@@ -516,25 +523,28 @@ class UpstreamProject(Project):
         url = '/'.join(_gen())
         return url
 
-    async def get_metadata(self, version=None):
+    @property
+    def needs_update(self):
+        """Either there is no latest version or the timeout is over."""
+        mtime = self.mtime
+        return (time.time() - mtime) >= self.channel.timeout if mtime else True
+
+    async def load_metadata(self, version=None):
         if not self.needs_update:
-            metadata = await super().get_metadata(version)
+            metadata = await super().load_metadata(version)
             return metadata
 
         # update and cache
         url = self.url(version)
         client_session = aiotask_context.get('client_session')
+        self.log.info('Loading upstream metadata', url=url)
         async with client_session.get(url) as r:
             if r.status == 200:
                 data = await r.json()
                 metadata = Metadata.from_dict(data)
                 await self.store_metadata(metadata)
                 self.log.info('Loading metadata from upstream', response=r)
-                # TODO find out if it is better also to inject our urls in the
-                # metadata urls section
-                # query metadata after update, since urls are not injected in
-                # metadata.urls
-                metadata = await super().get_metadata(version)
+                metadata = await super().load_metadata(version)
                 return metadata
 
             if r.status == 404:
@@ -555,11 +565,13 @@ class UpstreamProject(Project):
         # create the our own url
         channel_release_path = release.channel_path(self.channel)
         # store upstream metadata
-        upstream_release_metadata_path = channel_release_path.joinpath(
-            UPSTREAM_METADATA_FILENAME)
+        upstream_release_metadata_path \
+            = channel_release_path / UPSTREAM_METADATA_FILENAME
         ensure_parents(upstream_release_metadata_path)
 
-        async with aiofiles.open(upstream_release_metadata_path, 'x') as f:
+        self.log.debug('Storing upstream release metadata', version=version,
+                       path=upstream_release_metadata_path)
+        async with aiofiles.open(upstream_release_metadata_path, 'w') as f:
             data = utils.json_dumps(attr.asdict(release,
                                                 dict_factory=str_keyed_dict))
             await f.write(data)
@@ -572,185 +584,13 @@ class UpstreamProject(Project):
 
     def release_url(self, release):
         """Create the release url for the actual configuration."""
-        channel_release_path = release.channel_path(self.channel)
-        path = pathlib.Path('/')\
-            .joinpath(*release.path_hashs)\
-            .joinpath(release.filename)
+        path = Path('/') / Path(*release.path_hashs)
         url = self.channel.releases_route.url_for(
             channel_name=self.channel.name,
-            path=str(path),
+            path=str(path.relative_to('/')),
             filename=release.filename
         )
         return url
-
-
-@attr.s(kw_only=True, auto_attribs=True)
-class CachedProject(UpstreamProject):
-
-    """A Project is a cached pypi project."""
-
-
-    @utils.reify
-    def metadata_upstream_path(self):
-        """The cached version of upstream metadata."""
-        name = ('pypi-metadata.json'
-                if self.version is None
-                else f'pypi-metadata-{self.version}.json')
-        path = self.path.joinpath(name)
-        return path
-
-    @utils.reify
-    def metadata_path(self):
-        """Our transformed metadata.
-
-        We change urls of releases here.
-        """
-        name = ('metadata.json'
-                if self.version is None
-                else f'metadata-{self.version}.json')
-        path = self.path.joinpath(name)
-        return path
-
-    async def get_metadata(self):
-        """Either lookup in cache or query pypi and store in cache."""
-        # try to find actual versions if not modified since cache_timeout
-        path = self.metadata_path
-        if (path.is_file()
-                and (time.time() - path.stat().st_mtime)
-                < self.cache.timeout):
-            # serve this file
-            async with aiofiles.open(path) as f:
-                log.info('Loading metadata from cache', path=path)
-                data = utils.json_loads(await f.read())
-                metadata = Metadata.from_dict(data)
-        else:
-            # create cache
-            upstream_metadata = await super().get_metadata()
-            async with aiofiles.open(
-                    self.metadata_upstream_path, "w") as f:
-                await f.write(utils.json_dumps(upstream_metadata))
-            # transform upstream
-            metadata = await self.transform(upstream_metadata)
-            async with aiofiles.open(self.metadata_path, "w") as f:
-                await f.write(utils.json_dumps(metadata))
-        return metadata
-
-    async def transform(self, upstream_metadata):
-        """Inject our own release URL into upstream metadata."""
-        async def _transform_releases(releases):
-            releases = [
-                await self.transform_url(release, prepare_cache=True)
-                for release in releases
-            ]
-            return releases
-
-        releases = {
-            version: await _transform_releases(releases)
-            for version, releases in upstream_metadata.releases.items()
-        }
-        urls = [
-            await self.transform_url(release)
-            for release in upstream_metadata.urls
-        ]
-
-        metadata = Metadata(
-            info=upstream_metadata.info,
-            last_serial=upstream_metadata.last_serial,
-            releases=releases,
-            urls=urls)
-        return metadata
-
-    async def transform_url(self, release, prepare_cache=False):
-        """Transform the upstream url and prepare cache.
-
-        Since pypi sends multiple equal urls in metadata, we do not want to
-        always prepare the cache.
-
-        """
-        release_file = ReleaseFile.from_channel_url(channel=self.channel,
-                                                    url=release.url,
-                                                    metadata=release)
-        if prepare_cache:
-            # TODO prepare cache by examining cache_path for existing metadata
-            await release_file.persist()
-
-        transformed_url = await release_file.transform_url()
-
-        return transformed_url
-
-
-@attr.s(kw_only=True, auto_attribs=True)
-class ReleaseFile:
-    channel: Channel
-    release: Release
-    path: pathlib.Path
-
-    @classmethod
-    async def from_channel_release_url(cls, channel, relative_path):
-        release = await Release.from_channel_release_url(channel, relative_path)
-        path = channel.releases_path(relative_path)
-        release_file = cls(channel=channel, release=release, path=path)
-        return release_file
-
-    @utils.reify
-    def file_name(self):
-        return self.path.name
-
-    @utils.reify
-    def cache_path(self):
-        path = self.channel.cache.root.joinpath('releases')
-        return path
-
-    @utils.reify
-    def release_file_path(self):
-        path = self.cache_path.joinpath(self.path, self.file_name)
-        return path
-
-    @utils.reify
-    def release_file_path_preparing(self):
-        path = self.release_file_path.with_name(
-            self.release_file_path.name + '.preparing')
-        return path
-
-    async def transform_url(self):
-        metadata = attr.evolve(self.metadata)
-        request = aiotask_context.get('request')
-
-        metadata.url = request.app.router['release'].url_for(
-            channel_name=self.channel.name,
-            path=str(self.path),
-            file=self.file_name
-        )
-        return metadata
-
-    def metadata_path(self, path):
-        metadata_path = self.cache_path.joinpath(path, 'metadata.json')
-        return metadata_path
-
-    async def persist(self):
-        # copy url metadata to cache path
-        metadata_path = self.metadata_path(self.path)
-        if not metadata_path.parent.is_dir():
-            metadata_path.parent.mkdir(parents=True)
-
-        async with aiofiles.open(metadata_path, 'w') as f:
-            data = utils.json_dumps(attr.asdict(self.metadata))
-            await f.write(data)
-            log.info('Cached release metadata', path=metadata_path)
-
-    @classmethod
-    async def from_cached_metadata(cls, cache, path):
-        cached_release = cls(cache=cache)
-        metadata_path = cached_release.metadata_path(path)
-        async with aiofiles.open(metadata_path) as f:
-            data = await f.read()
-            cached_release.metadata = utils.json_loads(data)
-        return cached_release
-
-    @property
-    def streamer(self):
-        streamer = CachingStreamer(self.upstream_url, self.release_file_path)
-        return streamer
 
 
 @attr.s(kw_only=True, auto_attribs=True)
@@ -758,16 +598,24 @@ class CachingStreamer:
 
     log = structlog.get_logger(':'.join((__module__, __qualname__)))    # noqa: E0602
 
-    release: Release
+    url: str
+    path: Path
+    upstream_enabled: bool
 
-    def __init__(self, url, file_path):
-        self.url = url
-        self.file_path = file_path
+    @classmethod
+    async def from_channel_release_url(cls, channel, path, filename):
+        release = await channel.release(path)
+        upstream_release = await channel.upstream_release(path)
+        streamer = cls(
+            url=upstream_release.url,
+            path=release.channel_path(channel) / filename,
+            upstream_enabled=channel.upstream_enabled
+        )
+        return streamer
 
     @utils.reify
-    def file_path_preparing(self):
-        path = self.file_path.with_name(
-            self.file_path.name + '.preparing')
+    def path_preparing(self):
+        path = self.path.with_name(self.path.name + PREPARING_SUFFIX)
         return path
 
     async def stream(self, force=False):
@@ -778,22 +626,34 @@ class CachingStreamer:
 
         :param force: force recaching
         """
-        if not self.file_path.is_file() or force:
-            if self.file_path_preparing.is_file():
-                # serve from intermediate file
-                async for data in self._stream_from_intermediate():
-                    self.log.debug('Stream data', size=len(data))
-                    yield data
+        if not self.path.is_file() or force:
+            if self.path_preparing.is_file():
+                async def _gen():
+                    # serve from intermediate file
+                    async for data in self._stream_from_intermediate():
+                        yield data
+            elif self.upstream_enabled:
+                # testing for 404
+                client_session = aiotask_context.get('client_session')
+                async with client_session.head(self.url) as r:
+                    if r.status != 200:
+                        if r.status == 404:
+                            raise aiohttp.web.HTTPNotFound()
+                        raise aiohttp.web.HTTPInternalServerError()
+
+                async def _gen():
+                    async for data in self._stream_and_cache():
+                        yield data
             else:
-                async for data in self._stream_and_cache():
-                    self.log.debug('Stream data', size=len(data))
-                    yield data
+                raise aiohttp.web.HTTPNotFound()
         else:
-            self.log.info('Serving cache', path=self.file_path)
-            async with aiofiles.open(self.file_path, 'rb') as f:
-                async for data in ChunkedFileIterator(f, chunk_size=2**14):
-                    self.log.debug('Stream data', size=len(data))
-                    yield data
+            async def _gen():
+                self.log.info('Serving cache', path=self.path)
+                async with aiofiles.open(self.path, 'rb') as f:
+                    async for data in ChunkedFileIterator(f, chunk_size=2**14):
+                        self.log.debug('Stream data', size=len(data))
+                        yield data
+        return _gen()
 
     async def _stream_and_cache(self):
         """Stream data from upstream and cache them.
@@ -802,10 +662,11 @@ class CachingStreamer:
         disconnecting clients from stopping it.
         """
         client_session = aiotask_context.get('client_session')
-        self.log.info('Caching upstream', url=self.url, path=self.file_path)
+        self.log.info('Caching upstream', url=self.url, path=self.path)
 
         queue = asyncio.Queue()
         fut_finished = asyncio.Future()
+        cur_task = asyncio.current_task()
 
         async def _stream_queue():
             while queue.qsize() or not fut_finished.done():
@@ -817,21 +678,23 @@ class CachingStreamer:
 
         async def _enqueue_upstream():
             try:
-                async with aiofiles.open(self.file_path_preparing, 'xb') as f:
+                log.debug('Streaming from upstream into file and queue',
+                          file=self.path_preparing, url=self.url)
+                async with aiofiles.open(self.path_preparing, 'xb') as f:
                     async with client_session.get(self.url) as r:
                         async for data, _ in r.content.iter_chunks():
                             await f.write(data)
                             await queue.put(data)
                         fut_finished.set_result(True)
-                self.file_path_preparing.rename(self.file_path)
-                self.log.info('Finished download', path=self.file_path)
+                self.path_preparing.rename(self.path)
+                self.log.info('Finished download', path=self.path)
             except (asyncio.CancelledError, IOError, Exception) as ex:      # noqa: W0703
-                fut_finished.set_exception(ex)
+                cur_task.cancel()
                 # cleanup broken download
                 self.log.error('Cleaning broken download',
-                               path=self.file_path_preparing, error=ex)
+                               path=self.path_preparing, error=ex)
                 try:
-                    self.file_path_preparing.unlink()
+                    self.path_preparing.unlink()
                 except FileNotFoundError:
                     pass
 
@@ -843,10 +706,10 @@ class CachingStreamer:
 
     async def _stream_from_intermediate(self):
         self.log.info('Stream from intermediate',
-                      path=self.file_path_preparing)
+                      path=self.path_preparing)
 
         watcher = inotipy.Watcher.create()
-        watcher.watch(str(self.file_path_preparing),
+        watcher.watch(str(self.path_preparing),
                       inotipy.IN.MOVE_SELF
                       | inotipy.IN.DELETE_SELF
                       | inotipy.IN.CLOSE_WRITE
@@ -871,7 +734,7 @@ class CachingStreamer:
                     fut_finished.set_result(event)
                     break
 
-        async with aiofiles.open(self.file_path_preparing, 'rb') as f:
+        async with aiofiles.open(self.path_preparing, 'rb') as f:
             while True:
                 data = await f.read()
                 if data:
@@ -884,6 +747,17 @@ class CachingStreamer:
                     # wait for next write event
                     await ev_write.wait()
                     ev_write.clear()
+
+    async def response(self):
+        headers = {
+            'Content-disposition':
+            f'attachment; filename={self.path.name}'
+        }
+        stream = await self.stream()
+        return aiohttp.web.Response(
+            body=stream,
+            headers=headers
+        )
 
 
 class ChunkedFileIterator:

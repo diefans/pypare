@@ -1,10 +1,10 @@
 {
     "info": {
         "author": "Author",
-        "author_email": "bimbam@example.com",
+        "author_email": "foobar@example.com",
         "bugtrack_url": null,
         "classifiers": [
-            "bimbam"
+            "foobar"
         ],
         "description": "",
         "description_content_type": "",
@@ -20,12 +20,12 @@
         "license": "License",
         "maintainer": "",
         "maintainer_email": "",
-        "name": "bimbam",
-        "package_url": "https://pypi.org/project/bimbam/",
+        "name": "foobar",
+        "package_url": "https://pypi.org/project/foobar/",
         "platform": "",
-        "project_url": "https://pypi.org/project/bimbam/",
+        "project_url": "https://pypi.org/project/foobar/",
         "project_urls": null,
-        "release_url": "https://pypi.org/project/bimbam/0.1.0/",
+        "release_url": "https://pypi.org/project/foobar/0.1.0/",
         "requires_dist": [
             "baz (>=1.0,<2.0)",
             "bam (>=0.1.0,<1.0)"
@@ -44,7 +44,7 @@
                     "sha256": "c67c199595622dfbdc9e415c4a0ad6166eb49cbf74c6aac7bb3e958604d5ecb8"
                 },
                 "downloads": -1,
-                "filename": "bimbam-0.1.0.txt",
+                "filename": "foobar-0.1.0.txt",
                 "has_sig": false,
                 "md5_digest": "3749f52bb326ae96782b42dc0a97b4c1",
                 "packagetype": "packagetype",
@@ -52,7 +52,7 @@
                 "requires_python": ">=3.6,<4.0",
                 "size": 10,
                 "upload_time": "2018-10-04T21:41:31",
-                "url": "/pypi/test/+releases//92/f89b/a34e48001939d59cdd421abd04218990f0b7d311b34c257acf2f6ded05c16148/bimbam-0.1.0.txt/bimbam-0.1.0.txt"
+                "url": "/pypi/test-upstream/+releases/92/f89b/a34e48001939d59cdd421abd04218990f0b7d311b34c257acf2f6ded05c16148/foobar-0.1.0.txt"
             }
         ]
     },
@@ -64,7 +64,7 @@
                 "sha256": "c67c199595622dfbdc9e415c4a0ad6166eb49cbf74c6aac7bb3e958604d5ecb8"
             },
             "downloads": -1,
-            "filename": "bimbam-0.1.0.txt",
+            "filename": "foobar-0.1.0.txt",
             "has_sig": false,
             "md5_digest": "3749f52bb326ae96782b42dc0a97b4c1",
             "packagetype": "packagetype",
@@ -72,7 +72,7 @@
             "requires_python": ">=3.6,<4.0",
             "size": 10,
             "upload_time": "2018-10-04T21:41:31",
-            "url": "/pypi/test/+releases//92/f89b/a34e48001939d59cdd421abd04218990f0b7d311b34c257acf2f6ded05c16148/bimbam-0.1.0.txt/bimbam-0.1.0.txt"
+            "url": "/pypi/test-upstream/+releases/92/f89b/a34e48001939d59cdd421abd04218990f0b7d311b34c257acf2f6ded05c16148/foobar-0.1.0.txt"
         }
     ]
 }

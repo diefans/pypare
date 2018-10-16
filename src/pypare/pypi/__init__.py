@@ -13,14 +13,13 @@
 # limitations under the License.
 
 """Very simple caching pypi proxy."""
-import pathlib
-import re
+from pathlib import Path
 
 import aiohttp
 import aiohttp.web
 import aiohttp_jinja2
 import jinja2
-import pkg_resources
+from packaging.version import VERSION_PATTERN
 import structlog
 
 from . import model
@@ -30,14 +29,19 @@ RELEASES_ROUTE = 'releases'
 
 log = structlog.get_logger()
 routes = aiohttp.web.RouteTableDef()
-re_semver = re.compile(
-    r'\bv?(?:0|[1-9]\d*)'
-    r'\.(?:0|[1-9]\d*)'
-    r'\.(?:0|[1-9]\d*)'
-    r'(?:-[\da-z-]+(?:\.[\da-z-]+)*)'
-    r'?(?:\+[\da-z-]+(?:\.[\da-z-]+)*)?\b')
 
-re.compile(r'^(\d+)\.(\d+)\.(\d+)(?:-([0-9a-zA-Z.-]+))?(?:\+([0-9a-zA-Z.-]+))?$')
+
+def strip_verbose_pattern(pattern):
+    def _gen():
+        for line in pattern.split('\n'):
+            stripped, *_ = line.rsplit('#', 1)
+            yield stripped.strip()
+
+    return r''.join(_gen())
+
+
+VERSION_PATTERN = strip_verbose_pattern(VERSION_PATTERN)
+
 
 @routes.get('/')
 async def index(request):
@@ -51,37 +55,30 @@ async def index(request):
     return response
 
 
-@routes.get(r'/{channel_name}/'
-            f'{model.RELEASES_NAME}' r'/{path:[a-f0-9/]+}/{filename}',
+@routes.get(r'/{channel_name}/+releases/{path:[a-f0-9/]+}/{filename}',
             name=RELEASES_ROUTE)
 async def serve_release(request):
     channel_name = request.match_info['channel_name']
     path = request.match_info['path']
+    filename = request.match_info['filename']
     cache = request.config_dict['cache']
 
-    channel = await model.Channel.from_cache(cache=cache, name=channel_name)
-
-    # TODO assert filename == release.filename
-    release_file = model.ReleaseFile.from_channel_release_url(
-        channel, path
+    channel = await cache.channel(
+        name=channel_name,
+        releases_route=request.app.router[RELEASES_ROUTE]
     )
-
-    headers = {
-        'Content-disposition':
-        f'attachment; filename={cached_release.file_name}'
-    }
-    return aiohttp.web.Response(
-        body=cached_release.streamer.stream(),
-        headers=headers
+    streamer = await model.CachingStreamer.from_channel_release_url(
+        channel, path, filename
     )
+    return await streamer.response()
 
 
 @routes.get(r'/{channel_name}/{project_name}')
 @routes.get(r'/{channel_name}/{project_name}/')
 @routes.get(r'/{channel_name}/{project_name}/{json:json}')
-@routes.get(r'/{channel_name}/{project_name}/{version:' + re_semver.pattern + r'}')
-@routes.get(r'/{channel_name}/{project_name}/{version:' + re_semver.pattern + r'}/')
-@routes.get(r'/{channel_name}/{project_name}/{version:' + re_semver.pattern + r'}/{json:json}')    # noqa
+@routes.get(r'/{channel_name}/{project_name}/{version:' + VERSION_PATTERN + r'}')               # noqa
+@routes.get(r'/{channel_name}/{project_name}/{version:' + VERSION_PATTERN + r'}/')              # noqa
+@routes.get(r'/{channel_name}/{project_name}/{version:' + VERSION_PATTERN + r'}/{json:json}')   # noqa
 async def get_project(request):
     channel_name = request.match_info['channel_name']
     project_name = request.match_info['project_name']
@@ -89,14 +86,14 @@ async def get_project(request):
     version = model.Version(version) if version else None
     cache = request.config_dict['cache']
 
-    channel = model.Channel.from_cache(
-        cache=cache, name=channel_name,
+    channel = await cache.channel(
+        name=channel_name,
         releases_route=request.app.router[RELEASES_ROUTE]
     )
     project = channel.project(project_name)
 
     try:
-        metadata = await project.get_metadata()
+        metadata = await project.load_metadata()
     except model.MetadataNotFound:
         raise aiohttp.web.HTTPNotFound()
     except model.MetadataRetrievingError:
@@ -116,26 +113,55 @@ async def get_project(request):
 
 
 def jinja2_filter_basename(path):
-    return pathlib.Path(str(path)).name
+    return Path(str(path)).name
 
 
 def jinja2_filter_dirname(path):
-    return pathlib.Path(str(path)).parent
+    return Path(str(path)).parent
 
 
 async def plug_me_in(app):
-    await app.plugin('pypare.plugins:plugin_task_context')
-    cache = model.Cache(
-        root=app.config['cache_root'],
-        # timeout=app.config['cache_timeout'],
-    )
-    log.info('Using cache', cache_root=cache.root)
+    defaults = {
+        'upstream_channel_name': 'pypi',
+        'upstream_channel_api_base': 'https://pypi.org/pypi',
+        'upstream_channel_timeout': 60 * 60 * 24,
+    }
+    app.config.set_defaults(defaults)
 
+    await app.plugin('pypare.plugins:plugin_task_context')
+
+    # create pypi subapp
     pypi_app = app.config['pypi_app'] = aiohttp.web.Application()
+    cache = model.Cache(root=app.config['cache_root'])
+    log.info('Using cache', cache_root=cache.root)
     pypi_app['cache'] = cache
     pypi_app.add_routes(routes)
+    pypi_app['releases_route'] = pypi_app.router[RELEASES_ROUTE]
 
-    template_path = pkg_resources.resource_filename(__package__, 'templates')
+    # setup default upstream channel
+    # TODO should we really take upstream config from CLI???
+    # creates the conflict of overriding an already persistent upstream config
+    # better to provide another CLI command for creating channels at all
+    upstream_channel_name = app.config['upstream_channel_name']
+    try:
+        upstream_channel = await cache.channel(
+            upstream_channel_name,
+            releases_route=pypi_app['releases_route'],
+        )
+    except FileNotFoundError:
+        # create upstream channel
+        upstream_channel = model.Channel.from_cache_only(
+            cache, name=upstream_channel_name,
+            releases_route=pypi_app['releases_route'],
+            upstream_api_base=app.config['upstream_channel_api_base'],
+            timeout=app.config['upstream_channel_timeout'],
+        )
+        await upstream_channel.store()
+        log.info('Created default upstream channel',
+                 name=upstream_channel_name)
+    app['upstream_channel'] = upstream_channel
+
+    template_path = str(Path(__spec__.origin).parent / 'templates')
     aiohttp_jinja2.setup(
         pypi_app,
         loader=jinja2.FileSystemLoader(template_path),
