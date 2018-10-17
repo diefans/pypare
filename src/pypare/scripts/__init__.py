@@ -108,7 +108,7 @@ class ClickPath(click.Path):
               help='The base API URL of the upstream channel.')
 @click.option('upstream_channel_timeout', '--upstream-channel-timeout',
               default=60 * 60 * 24,
-              help='The timeout upstream is aksed for new metadata')
+              help='The timeout upstream is asked for new metadata.')
 @click.option('plugins', '--plugin', multiple=True, type=list,
               help='A plugin in pkg_resources notation to load.')
 @click.pass_obj
