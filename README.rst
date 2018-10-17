@@ -99,3 +99,10 @@ Run as zipapp:
 
    pypare pypi --cache-root /tmp/pypi-data
 
+
+Using the cache
+^^^^^^^^^^^^^^^
+
+.. code-block:: bash
+
+   PIP_INDEX_URL=http://localhost:3141/pypi/pypi pip install tensorflow
