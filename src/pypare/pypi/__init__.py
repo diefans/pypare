@@ -83,7 +83,7 @@ async def get_project(request):
     channel_name = request.match_info['channel_name']
     project_name = request.match_info['project_name']
     version = request.match_info.get('version', None)
-    version = model.Version(version) if version else None
+    version = model.pkg_version.parse(version) if version else None
     cache = request.config_dict['cache']
 
     channel = await cache.channel(
@@ -93,7 +93,7 @@ async def get_project(request):
     project = channel.project(project_name)
 
     try:
-        metadata = await project.load_metadata()
+        metadata = await project.load_metadata(version)
     except model.MetadataNotFound:
         raise aiohttp.web.HTTPNotFound()
     except model.MetadataRetrievingError:

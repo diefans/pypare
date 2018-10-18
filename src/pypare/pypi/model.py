@@ -473,9 +473,7 @@ class Project:
                            path=info_path, version=info.version)
 
         if self.latest_version is None or info.version > self.latest_version:
-            self.path_latest.symlink_to(
-                version_path.relative_to(self.path_latest.parent)
-            )
+            symlink_relative_to(self.path_latest, version_path)
 
     async def store_releases(self, releases):
         for version, packages in releases.items():
@@ -537,11 +535,13 @@ class UpstreamProject(Project):
         url = '/'.join(_gen())
         return url
 
-    @property
-    def needs_update(self):
+    def needs_update(self, version=None):
         """Either there is no latest version or the timeout is over."""
         mtime = self.mtime
-        return (time.time() - mtime) >= self.channel.timeout if mtime else True
+        timeout = ((time.time() - mtime) >= self.channel.timeout
+                   if mtime else True)
+
+        return timeout or not self.info_path(version).exists()
 
     async def load_metadata(self, version=None):
         if not self.needs_update:

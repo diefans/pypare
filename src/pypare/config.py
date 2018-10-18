@@ -145,6 +145,8 @@ def resolve_dotted_name(name):
         resolved = sys.modules[module_name]
     else:
         spec = importlib.util.find_spec(module_name)
+        if not spec:
+            raise ImportError(f'Module `{module_name}` has no spec.')
         resolved = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(resolved)
         sys.modules[resolved.__name__] = resolved

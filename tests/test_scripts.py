@@ -1,17 +1,11 @@
+import importlib
+
 import pytest
 
-try:
-    import tokio             # noqa: W0611
-    has_tokio = True
-except ImportError:
-    has_tokio = False
 
-
-try:
-    import uvloop            # noqa: W0611
-    has_uvloop = True
-except ImportError:
-    has_uvloop = False
+# find a module without importing it
+has_tokio = bool(importlib.util.find_spec('tokio'))
+has_uvloop = bool(importlib.util.find_spec('uvloop'))
 
 
 @pytest.fixture
