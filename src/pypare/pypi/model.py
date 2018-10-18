@@ -145,29 +145,29 @@ class MetadataRetrievingError(CacheException):
 
 @attr.s(kw_only=True, auto_attribs=True)        # noqa: R0903
 class Info:
-    author: str
-    author_email: str
-    bugtrack_url: str
-    classifiers: typing.List[str]
-    description: str
-    description_content_type: str
-    docs_url: typing.List[str]
-    download_url: str
-    downloads: typing.Dict[str, int]
-    home_page: str
-    keywords: str
-    license: str
-    maintainer: str
-    maintainer_email: str
+    author: str = ''
+    author_email: str = ''
+    bugtrack_url: str = ''
+    classifiers: typing.List[str] = []
+    description: str = ''
+    description_content_type: str = ''
+    docs_url: typing.List[str] = []
+    download_url: str = ''
+    downloads: typing.Dict[str, int] = {}
+    home_page: str = ''
+    keywords: str = ''
+    license: str = ''
+    maintainer: str = ''
+    maintainer_email: str = ''
     name: str
-    package_url: str
-    platform: str
-    project_url: str
-    project_urls: typing.List[str]
-    release_url: str
-    requires_dist: typing.List[str]
-    requires_python: str
-    summary: str
+    package_url: str = ''
+    platform: str = ''
+    project_url: str = ''
+    project_urls: typing.List[str] = []
+    release_url: str = ''
+    requires_dist: typing.List[str] = []
+    requires_python: str = ''
+    summary: str = ''
     version: pkg_version._BaseVersion = attr.ib(converter=ensure_semver)
 
     @classmethod
